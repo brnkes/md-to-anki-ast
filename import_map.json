@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "remark-parse": "https://esm.sh/remark-parse@10",
+    "flags": "https://deno.land/std/flags/mod.ts",
+    "path": "https://deno.land/std/path/mod.ts",
+    "denque": "https://esm.sh/denque@2.1.0"
+  }
+}
