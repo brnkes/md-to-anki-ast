@@ -1,4 +1,3 @@
-// import remarkParse from 'remark-parse';
 import { parse } from "flags"
 import * as path from "path";
 import Denque from "denque";
@@ -28,7 +27,7 @@ async function traverseDirectoryTree(rootDir: string) {
 
                 if(fileExtension === '.md') {
                     const fileFullPath = path.join(nextDirectory,content.name);
-                    await readAndProcessFile(fileFullPath);
+                    // await readAndProcessFile(fileFullPath);
                 }
             } else if(content.isDirectory) {
                 traversalQueue.push(path.join(nextDirectory, content.name))
