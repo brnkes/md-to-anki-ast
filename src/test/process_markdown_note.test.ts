@@ -1,8 +1,9 @@
-import {processMarkdownNote} from "../process_markdown_note.ts";
-import {mdTestInline} from "./samples/index.ts";
+import {processMarkdownNote} from "../process_markdown_note.js";
+import {mdTestInline} from "./samples/index.js";
+import {mdTestWithHeading} from "./samples/index.js";
 
-Deno.test('Markdown Note Processor', async (t) => {
-    await t.step('simple', async () => {
-        const result = await processMarkdownNote(mdTestInline);
+describe('Markdown Note Processor', () => {
+    it('simple test case', async () => {
+        const result = await processMarkdownNote(mdTestWithHeading);
     });
 });
