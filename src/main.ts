@@ -1,6 +1,5 @@
 import * as path from "path";
 import { promises as fs } from "fs";
-import Denque from "denque";
 
 import { processMarkdownNotes } from './process_markdown_note.js';
 import {breadthFirstSearch} from "./common/bfs.js";
@@ -18,16 +17,17 @@ async function readAndProcessFile(fileFullPath: string) {
 async function traverseDirectoryTree(rootDir: string) {
     const visitor = async (nextDirectory: string, enqueue: (e: string) => void) => {
         for (const filename of await fs.readdir(nextDirectory)) {
-            const contentStats = await fs.lstat(filename);
+            const fileFullPath = path.join(nextDirectory, filename);
+            const contentStats = await fs.lstat(fileFullPath);
+
             if(contentStats.isFile()) {
                 const fileExtension = path.extname(filename);
 
                 if(fileExtension === '.md') {
-                    const fileFullPath = path.join(nextDirectory, filename);
-                    // await readAndProcessFile(fileFullPath);
+                    await readAndProcessFile(fileFullPath);
                 }
             } else if(contentStats.isDirectory()) {
-                enqueue(path.join(nextDirectory, filename));
+                enqueue(fileFullPath);
             }
         }
     }
@@ -36,6 +36,8 @@ async function traverseDirectoryTree(rootDir: string) {
         rootDir,
         visitor
     );
+
+    console.log("Done ?")
 }
 
 await traverseDirectoryTree(markdownDirectory);

@@ -6,7 +6,7 @@ export const breadthFirstSearch = async <T>(
 ) => {
     const q = new Denque([root]);
 
-    for(let nextElement = q.shift(); nextElement !== undefined;) {
+    for(let nextElement = q.shift(); nextElement !== undefined; nextElement = q.shift()) {
         await visitElement(nextElement, (elementToEnqueue) => q.push(elementToEnqueue));
     }
 }

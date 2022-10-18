@@ -23,15 +23,8 @@ type FindTitleResults = {
 }
 // new RegExp("^(.+)+\s+❔$",'gm')
 function findTitle(content: string): FindTitleResults | undefined {
-    const basis = "Section C - should not be included in the card";
-
-    const ss = content === basis;
-    console.log(ss);
-
-    const rxPrefixed = new RegExp(`^(.+)+\\s+${CardHints.CardFront}$`, 'gm');
-    const rxSuffixed = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
-
-    const rerer = rxPrefixed.exec(content);
+    const rxPrefixed = new RegExp(`^(.+)\\s+${CardHints.CardFront}$`, 'g');
+    const rxSuffixed = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'g');
 
     for(const rx of [rxPrefixed, rxSuffixed]) {
         const matches = rx.exec(content);
