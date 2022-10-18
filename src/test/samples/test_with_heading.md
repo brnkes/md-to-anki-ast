@@ -24,7 +24,7 @@ Should keep accumulating until the next heading
 This line shouldn't be included either...
 
 Should this be included ?
-What is 5+5 ❔
+What is 5+5 ❔ <!--🔮 foobar-->
 I'll get back to you as soon as I have an answer 📓  
 
 ...nor should this one

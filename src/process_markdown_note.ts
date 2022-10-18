@@ -4,13 +4,15 @@ import remarkGfm from 'remark-gfm'
 import {visit} from 'unist-util-visit';
 import {is as isUnist} from 'unist-util-is';
 import type {Node} from 'unist';
-import type {Heading, Parent, Text} from 'mdast';
+import type {Heading, HTML, Parent, Text} from 'mdast';
 import {text as textMD} from 'mdast-builder';
 import {createPrunedSubcontentTree, markContentBoundaries, WithId} from './prune_content_outside_card.js';
 import {assertDefined} from "./shared.js";
 import {toHast} from 'mdast-util-to-hast'
 import {toHtml} from 'hast-util-to-html'
 import {toMarkdown} from "mdast-util-to-markdown";
+import {match} from "assert";
+import {randomUUID} from "crypto";
 
 enum CardHints {
     CardFront = "❔",
@@ -24,8 +26,8 @@ type FindTitleResults = {
 }
 
 function findTitle(content: string): FindTitleResults | undefined {
-    const rxPrefix = new RegExp(`^(.+)\\s+${CardHints.CardFront}$`, 'gm');
-    const rxSuffix = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
+    const rxPrefix = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
+    const rxSuffix = new RegExp(`^(.+)\\s+${CardHints.CardFront}\\s?$`, 'gm');
 
     for(const rx of [rxPrefix, rxSuffix]) {
         const matches = rx.exec(content);
@@ -42,7 +44,7 @@ function findTitle(content: string): FindTitleResults | undefined {
 
 function encounteredEndSymbol(content: string) {
     const rxPrefix = new RegExp(`^(${CardHints.CardBack})`,'gm');
-    const rxSuffix = new RegExp(`^.+(\\s*${CardHints.CardBack})$`, 'gm');
+    const rxSuffix = new RegExp(`^.+(\\s*${CardHints.CardBack})\\s?$`, 'gm');
 
     for(const rx of [rxPrefix, rxSuffix]) {
         const matches = rx.exec(content);
@@ -87,16 +89,6 @@ type ParseContentNextInput = {
 
 type ParseGenStateAfterTitleFound = FindTitleResults & {
     foundTitleParentIndex: number
-}
-
-export const getContentParser = () => {
-    let id = 1;
-    const idGen = () => id++;
-
-    return {
-        parserObject: genParseContent(),
-        idGen
-    }
 }
 
 const injectIntoArray = <T>(arr: T[], index: number, elementsToInject: T[]) => {
@@ -224,6 +216,40 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
     }
 }
 
+const cardIdCommentRegex = new RegExp(`^<!--${CardHints.IdCommentIdentifier}\\s([\\w\\d]+).+$`, 'm');
+
+function checkCardIdentifier(node: Node) {
+    if(isUnist<HTML>(node, 'html')) {
+        const matches = cardIdCommentRegex.exec(node.value);
+        if(matches?.[1]) {
+            return matches[1];
+        }
+    }
+
+    return null;
+}
+
+export const getContentParser = () => {
+    let hierarchicalId = 1;
+    const hierarchicalIdGen = () => hierarchicalId++;
+
+    let lastCardId: string | null = null;
+
+    return {
+        mainContentParser: genParseContent(),
+        cardIdChecker: {
+            tryCheckAndMemorize: (n: Node) => {
+                lastCardId = lastCardId || checkCardIdentifier(n);
+            },
+            get: () => lastCardId,
+            reset: () => {
+                lastCardId = null;
+            }
+        },
+        hierarchicalIdGen
+    }
+}
+
 export async function processMarkdownNotes(content: string) {
     const mdTree = await unified()
         .use(remarkParse)
@@ -231,24 +257,31 @@ export async function processMarkdownNotes(content: string) {
         .parse(content);
 
     const contentParser = getContentParser();
-    contentParser.parserObject.next();
+    contentParser.mainContentParser.next();
 
-    const cardsFound: CardResult[] = [];
+    const cardsDetected: CardResult[] = [];
 
     (visit as any)(mdTree, (node: Node & WithId, index: number | null, parent: (Parent & WithId) | null) => {
-        const idGen = contentParser.idGen;
+        const idGen = contentParser.hierarchicalIdGen;
         node._id = [...parent?._id || [], idGen()];
 
-        const intent = contentParser.parserObject.next({ node, index, parent });
+        const intent = contentParser.mainContentParser.next({ node, index, parent });
+        contentParser.cardIdChecker.tryCheckAndMemorize(node);
 
         switch(intent.value?.request) {
             case ParserSteps.RelayToVisitor:
                 return intent.value?.value;
             case ParserSteps.CreatedCard:
-                cardsFound.push(intent.value?.value);
+                const cardDetails = intent.value?.value;
+                const idFound = contentParser.cardIdChecker.get() || randomUUID();
+
+                cardDetails.id = idFound;
+
+                cardsDetected.push(cardDetails);
+                contentParser.cardIdChecker.reset();
                 break;
         }
     });
 
-    return cardsFound;
+    return cardsDetected;
 }

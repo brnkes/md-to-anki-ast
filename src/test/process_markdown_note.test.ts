@@ -11,6 +11,8 @@ describe('Markdown Note Processor', () => {
             'What is 5+5'
         ]);
 
+        expect(result[2].id).toEqual("foobar");
+
         expect(result.map(x => x.back)).toMatchSnapshot();
     });
 });
