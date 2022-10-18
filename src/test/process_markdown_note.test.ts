@@ -10,5 +10,7 @@ describe('Markdown Note Processor', () => {
             'Section B',
             'What is 5+5'
         ]);
+
+        expect(result.map(x => x.back)).toMatchSnapshot();
     });
 });

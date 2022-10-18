@@ -6,7 +6,7 @@ import {is as isUnist} from 'unist-util-is';
 import type {Node} from 'unist';
 import type {Heading, Parent, Text} from 'mdast';
 import {text as textMD} from 'mdast-builder';
-import {gatherSubcontentTree, markContentBoundaries, WithId} from './prune_content_outside_card.js';
+import {createPrunedSubcontentTree, markContentBoundaries, WithId} from './prune_content_outside_card.js';
 import {assertDefined} from "./shared.js";
 import {toHast} from 'mdast-util-to-hast'
 import {toHtml} from 'hast-util-to-html'
@@ -14,19 +14,20 @@ import {toMarkdown} from "mdast-util-to-markdown";
 
 enum CardHints {
     CardFront = "❔",
-    CardBack = "📓"
+    CardBack = "📓",
+    IdCommentIdentifier = "🔮"
 }
 
 type FindTitleResults = {
     titleMatch: string;
     contentRemainder: string;
 }
-// new RegExp("^(.+)+\s+❔$",'gm')
-function findTitle(content: string): FindTitleResults | undefined {
-    const rxPrefixed = new RegExp(`^(.+)\\s+${CardHints.CardFront}$`, 'g');
-    const rxSuffixed = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'g');
 
-    for(const rx of [rxPrefixed, rxSuffixed]) {
+function findTitle(content: string): FindTitleResults | undefined {
+    const rxPrefix = new RegExp(`^(.+)\\s+${CardHints.CardFront}$`, 'gm');
+    const rxSuffix = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
+
+    for(const rx of [rxPrefix, rxSuffix]) {
         const matches = rx.exec(content);
 
         const frontTitle = matches?.[1];
@@ -40,14 +41,17 @@ function findTitle(content: string): FindTitleResults | undefined {
 }
 
 function encounteredEndSymbol(content: string) {
-    const rx = new RegExp(`^${CardHints.CardBack}`,'gm');
+    const rxPrefix = new RegExp(`^(${CardHints.CardBack})`,'gm');
+    const rxSuffix = new RegExp(`^.+(\\s*${CardHints.CardBack})$`, 'gm');
 
-    const matches = rx.exec(content);
+    for(const rx of [rxPrefix, rxSuffix]) {
+        const matches = rx.exec(content);
 
-    if(matches) {
-        return {
-            contentUntilEndToken: content.slice(0, matches.index),
-            contentRemainder: content.slice(rx.lastIndex)
+        if (matches) {
+            return {
+                contentUntilEndToken: content.slice(0, rx.lastIndex - matches[1].length),
+                contentRemainder: content.slice(rx.lastIndex)
+            }
         }
     }
 }
@@ -95,6 +99,14 @@ export const getContentParser = () => {
     }
 }
 
+const injectIntoArray = <T>(arr: T[], index: number, elementsToInject: T[]) => {
+    return [
+        ...arr.slice(0, index),
+        ...elementsToInject,
+        ...arr.slice(index + 1)
+    ];
+}
+
 function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInput> {
     while(true) {
         // Search for a title
@@ -110,12 +122,14 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
                     assertDefined(index);
 
                     // can't think of a case where it matters whether we preserve the token... ?
-                    parent.children = [
-                        ...parent.children.slice(0, index - 1),
-                        textMD(results.titleMatch) as any,
-                        textMD(results.contentRemainder) as any,
-                        ...parent.children.slice(index + 1)
-                    ];
+                    parent.children = injectIntoArray(
+                        parent.children,
+                        index,
+                        [
+                            textMD(results.titleMatch) as any,
+                            textMD(results.contentRemainder) as any,
+                        ]
+                    );
 
                     foundTitle = {
                         ...results,
@@ -134,11 +148,12 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
         }
 
         // Keep looping until a new heading or end-of-note token is found.
-        let node = (yield adjustTraversalRequest).node;
+        let { node, parent, index } = (yield adjustTraversalRequest);
         while (true) {
             const isHeading = isUnist<Heading>(node, 'heading');
 
             if(isHeading) {
+                // No need to update the buffer, heading is out of bounds.
                 break;
             }
 
@@ -146,17 +161,45 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
                 const shouldStop = encounteredEndSymbol(node.value);
 
                 if(shouldStop) {
+                    assertDefined(parent);
+                    assertDefined(index);
+
+                    // We have to include content up to the end token.
+                    parent.children = injectIntoArray(
+                        parent.children,
+                        index,
+                        [
+                            textMD(shouldStop.contentUntilEndToken) as any,
+                            textMD(shouldStop.contentRemainder) as any,
+                        ]
+                    );
+
+                    // Re-traverse `contentUntilEndToken` so that visitor can attach an _id.
+                    // Then, push it into the buffer.
+                    const reprocessedContent = yield {
+                        request: ParserSteps.RelayToVisitor,
+                        value: index
+                    };
+
+                    node = reprocessedContent.node;
+
+                    // todo: proper typing
+                    buffer.push(node as any);
                     break;
                 }
             }
 
             // todo: proper typing
             buffer.push(node as any);
-            node = (yield).node;
+
+            const nextContent = yield;
+            node = nextContent.node;
+            parent = nextContent.parent;
+            index = nextContent.index;
         }
 
         markContentBoundaries(buffer);
-        const subcontentRoot = gatherSubcontentTree(buffer);
+        const subcontentRoot = createPrunedSubcontentTree(buffer);
 
         const htmlAST = toHast(subcontentRoot);
         if(!htmlAST) {

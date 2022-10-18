@@ -2,15 +2,10 @@ import {Parent, Root} from "mdast";
 import {assertDefined} from "./shared.js";
 import {root} from "mdast-builder";
 import {getAncestorTrie} from "./common/ancestor_trie.js";
-import {breadthFirstSearch} from "./common/bfs.js";
 import {visit} from "unist-util-visit";
 
 export type WithId = {
     _id: number[];
-}
-
-export type WithChildrenCutoff = {
-    _childrenCutoff?: number
 }
 
 export function findLeft<T>(lo: number, hi: number, comparisonFn: (val: T) => number, list: T[]) {
@@ -87,22 +82,6 @@ const searchNearestVector = (startFrom: number, buffer: WithId[]) => {
     return result;
 }
 
-export const pruneUntaggedItems = (elem: Parent) => {
-    // tood: types
-    const typedChildren = elem.children as any[] as (Node & Partial<WithId>)[];
-
-    const cutoffIdx = findLeft(
-        0, typedChildren.length,
-        (other) => {
-            return other._id ? -1 : 1;
-        },
-        typedChildren
-    );
-
-    // todo: types
-    (elem as any)._childrenCutoff  = cutoffIdx;
-}
-
 export const markContentBoundaries = (
     buffer: (Parent & WithId)[]
 ) => {
@@ -117,53 +96,73 @@ export const markContentBoundaries = (
 
         assertDefined(idxAncestor);
 
-        pruneUntaggedItems(buffer[idxAncestor]);
-
         lastIdx = idxAncestor
     }
 }
 
-const markSubtreesToProcess = (
-    trie: ReturnType<typeof getAncestorTrie>,
-    rootNode: WithId & Parent
-) => {
-    const visitor = async (e: WithId & Parent) => {
-        trie.add(e._id);
-    }
+export const findInclusiveIndexToPruneChildrenFrom = (elem: Parent) => {
+    // todo: types
+    const typedChildren = elem.children as any[] as (Node & Partial<WithId>)[];
 
-    visit(rootNode, visitor as any)
+    return findLeft(
+        0, typedChildren.length,
+        (other) => {
+            return other._id ? -1 : 1;
+        },
+        typedChildren
+    );
 }
 
-export const gatherSubcontentTree = (
-    buffer: (Parent & WithId & WithChildrenCutoff)[]
+const markVisitedSubtrees = (
+    trie: ReturnType<typeof getAncestorTrie>,
+    ancestorNode: WithId & Parent,
+    newContentRoot: Root
+) => {
+    const visitor = async (
+        elem: WithId & Partial<Parent>,
+        index: number,
+        parent: WithId & Parent
+    ) => {
+        if(elem._id?.length === undefined) {
+            console.warn("Un-ID'd nodes should have been pruned ?");
+            return;
+        }
+
+        trie.add(elem._id);
+
+        // Should prune out-of-bounds children.
+        if(elem.children !== undefined) {
+            const cutoffIdxIncl = findInclusiveIndexToPruneChildrenFrom(elem as Parent);
+            if (elem.children.length > cutoffIdxIncl) {
+                if (parent) {
+                    const elemCpy = JSON.parse(JSON.stringify(elem));
+                    elemCpy.children = elemCpy.children.slice(0, cutoffIdxIncl);
+                    parent.children[index] = elemCpy;
+                } else {
+                    elem.children = elem.children.slice(0, cutoffIdxIncl);
+                }
+            }
+        }
+    }
+
+    // Trie will contain this element if it's a child of a previously processed element.
+    const skip = trie.exists(ancestorNode._id);
+    if(skip) {
+        return;
+    }
+
+    visit(ancestorNode, visitor as any)
+    newContentRoot.children.push(ancestorNode as any);
+}
+
+export const createPrunedSubcontentTree = (
+    buffer: (Parent & WithId)[]
 ) => {
     const trieRoot = getAncestorTrie();
     const fauxRoot = root() as Root;
 
-    let lastElemDepth = 9999999;
-
     for(const elem of buffer) {
-        // Trie will contain this element if it's a child of a previously processed element.
-        const skip = trieRoot.exists(elem._id);
-
-        if(skip) {
-            continue;
-        }
-
-        markSubtreesToProcess(trieRoot, elem);
-
-        trieRoot.add(elem._id);
-
-        const elemCpy = JSON.parse(JSON.stringify(elem));
-
-        // Should prune out-of-bounds children.
-        if(elemCpy._childrenCutoff) {
-            if(elemCpy.children.length > elemCpy._childrenCutoff) {
-                elemCpy.children = elemCpy.children.slice(0, elemCpy._childrenCutoff);
-            }
-        }
-
-        fauxRoot.children.push(elemCpy as any);
+        markVisitedSubtrees(trieRoot, elem, fauxRoot);
     }
 
     // console.log(trieRoot.debugPrint());
