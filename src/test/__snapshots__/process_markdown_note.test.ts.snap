@@ -1,0 +1,65 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Markdown Note Processor simple test case 1`] = `
+[
+  {
+    "_debug": {
+      "backMarkdown": "
+
+Stuff
+
+*   A1
+    *   A1.1
+    *   A1.2
+        📓
+",
+    },
+    "back": "
+<p>Stuff</p>
+<ul>
+<li>A1
+<ul>
+<li>A1.1</li>
+<li>A1.2
+📓</li>
+</ul>
+</li>
+</ul>",
+    "front": "Section A",
+    "id": "todo",
+    "type": "basic",
+  },
+  {
+    "_debug": {
+      "backMarkdown": "
+
+Stuff 2
+
+*   B1
+    *   B1.1
+    *   B1.2
+    *   B1.3
+*   B2
+
+Should keep accumulating until the next heading
+",
+    },
+    "back": "
+<p>Stuff 2</p>
+<ul>
+<li>B1
+<ul>
+<li>B1.1</li>
+<li>B1.2</li>
+<li>B1.3</li>
+</ul>
+</li>
+<li>B2</li>
+</ul>
+<p>Should keep accumulating until the next heading</p>",
+    "front": "Section B",
+    "id": "todo",
+    "type": "basic",
+  },
+]
+`;

@@ -1,6 +1,9 @@
 import {Parent, Root} from "mdast";
 import {assertDefined} from "./shared.js";
 import {root} from "mdast-builder";
+import {getAncestorTrie} from "./common/ancestor_trie.js";
+import {breadthFirstSearch} from "./common/bfs.js";
+import {visit} from "unist-util-visit";
 
 export type WithId = {
     _id: number[];
@@ -120,50 +123,15 @@ export const markContentBoundaries = (
     }
 }
 
-const getAncestorTrie = () => {
-    const root: any = {}
-
-    function add(ids: number[]) {
-        let current = root;
-        for(const id of ids) {
-            current[id] = current[id] || {};
-            current = current[id];
-        }
+const markSubtreesToProcess = (
+    trie: ReturnType<typeof getAncestorTrie>,
+    rootNode: WithId & Parent
+) => {
+    const visitor = async (e: WithId & Parent) => {
+        trie.add(e._id);
     }
 
-    function exists(v: number[]) {
-        let current = root;
-        for(const vD of v) {
-            if(!current[vD]) {
-                return false;
-            }
-
-            current = current[vD];
-        }
-
-        return true;
-    }
-
-    function debugPrint() {
-        const buf: string[] = [];
-        function go(tabs = 0, current = root) {
-            for (const e of Object.entries(current)) {
-                const log = `${[...Array(tabs)].map(() => "-").join("")}${e[0]}`;
-                buf.push(log);
-
-                go(tabs + 1, e[1]);
-            }
-        }
-
-        go();
-        return buf.join("\n");
-    }
-
-    return {
-        add,
-        exists,
-        debugPrint
-    }
+    visit(rootNode, visitor as any)
 }
 
 export const gatherSubcontentTree = (
@@ -175,23 +143,22 @@ export const gatherSubcontentTree = (
     let lastElemDepth = 9999999;
 
     for(const elem of buffer) {
+        // Trie will contain this element if it's a child of a previously processed element.
         const skip = trieRoot.exists(elem._id);
 
         if(skip) {
             continue;
         }
 
+        markSubtreesToProcess(trieRoot, elem);
+
         trieRoot.add(elem._id);
 
         const elemCpy = JSON.parse(JSON.stringify(elem));
 
+        // Should prune out-of-bounds children.
         if(elemCpy._childrenCutoff) {
             if(elemCpy.children.length > elemCpy._childrenCutoff) {
-                // const newChildren = [...elem.children].slice(0, elem._childrenCutoff);
-                //
-                // const elemCpy = { ...elem }
-                // elemCpy.children = elemCpy;
-
                 elemCpy.children = elemCpy.children.slice(0, elemCpy._childrenCutoff);
             }
         }
@@ -199,7 +166,7 @@ export const gatherSubcontentTree = (
         fauxRoot.children.push(elemCpy as any);
     }
 
-    console.log(trieRoot.debugPrint());
+    // console.log(trieRoot.debugPrint());
 
     return fauxRoot;
 }

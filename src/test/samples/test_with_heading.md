@@ -1,27 +1,8 @@
-Start document
+## testing 1 - 234566 foo bar hello world xyzwt abcdedf
 
-## Section A ❔
-Stuff
-- A1
-  - A1.1
-  - A1.2
-📓
+This line shouldn't be included either...
 
-This part will be left out
+What is 5+5 ❔
+I'll get back to you as soon as I have an answer 📓  
 
-## Section B ❔
-Stuff 2
-- B1 
-  - B1.1
-  - B1.2
-  - B1.3
-- B2
-
-Should keep accumulating until the next heading
-
-## Won't be included
-Stuff 3
-
-Hi hello
-
-End document
+...nor should this one

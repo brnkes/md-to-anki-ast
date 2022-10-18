@@ -21,10 +21,17 @@ type FindTitleResults = {
     titleMatch: string;
     contentRemainder: string;
 }
-
+// new RegExp("^(.+)+\s+❔$",'gm')
 function findTitle(content: string): FindTitleResults | undefined {
+    const basis = "Section C - should not be included in the card";
+
+    const ss = content === basis;
+    console.log(ss);
+
     const rxPrefixed = new RegExp(`^(.+)+\\s+${CardHints.CardFront}$`, 'gm');
     const rxSuffixed = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
+
+    const rerer = rxPrefixed.exec(content);
 
     for(const rx of [rxPrefixed, rxSuffixed]) {
         const matches = rx.exec(content);
@@ -53,12 +60,26 @@ function encounteredEndSymbol(content: string) {
 }
 
 enum ParserSteps {
-    RelayToVisitor
+    RelayToVisitor,
+    CreatedCard
 }
 
 type ParseGenYield = undefined | {
     request: ParserSteps.RelayToVisitor,
     value: number
+} | {
+    request: ParserSteps.CreatedCard,
+    value: CardResult
+}
+
+type CardResult = {
+    front: string,
+    back: string,
+    type: string,
+    id: string,
+    _debug?: {
+        backMarkdown?: string
+    }
 }
 
 type ParseContentNextInput = {
@@ -92,12 +113,10 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
                 const results = findTitle(node.value);
 
                 if(results) {
-                    console.log(index);
-
                     assertDefined(parent);
                     assertDefined(index);
 
-                    // todo: Preserve content more accurately... or does it even matter ?
+                    // can't think of a case where it matters whether we preserve the token... ?
                     parent.children = [
                         ...parent.children.slice(0, index - 1),
                         textMD(results.titleMatch) as any,
@@ -116,18 +135,17 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
         // Keep accumulating content until card end symbol is found
         let buffer: (Parent & WithId)[] = [];
 
-        let adjustTraversal: ParseGenYield = {
+        const adjustTraversalRequest: ParseGenYield = {
             request: ParserSteps.RelayToVisitor,
             value: foundTitle.foundTitleParentIndex
         }
 
-        let node = (yield adjustTraversal).node;
-
+        // Keep looping until a new heading or end-of-note token is found.
+        let node = (yield adjustTraversalRequest).node;
         while (true) {
             const isHeading = isUnist<Heading>(node, 'heading');
 
             if(isHeading) {
-                // todo: construct and re traverse
                 break;
             }
 
@@ -135,7 +153,6 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
                 const shouldStop = encounteredEndSymbol(node.value);
 
                 if(shouldStop) {
-                    // todo: construct and re traverse
                     break;
                 }
             }
@@ -148,27 +165,30 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
         markContentBoundaries(buffer);
         const subcontentRoot = gatherSubcontentTree(buffer);
 
-        const backToMarkdown = toMarkdown(subcontentRoot);
-
         const htmlAST = toHast(subcontentRoot);
-
         if(!htmlAST) {
             throw new Error("HAST failure");
         }
-
         const htmlOutput = toHtml(htmlAST);
 
-        const card = {
+        const card: CardResult = {
             front: foundTitle.titleMatch,
             back: htmlOutput,
-            type: 'basic'
+            type: 'basic',
+            id: 'todo',
+            _debug: {
+                backMarkdown: toMarkdown(subcontentRoot)
+            }
         };
 
-        console.log(card);
+        yield {
+            request: ParserSteps.CreatedCard,
+            value: card
+        }
     }
 }
 
-export async function processMarkdownNote(content: string) {
+export async function processMarkdownNotes(content: string) {
     const mdTree = await unified()
         .use(remarkParse)
         .use(remarkGfm)
@@ -177,16 +197,22 @@ export async function processMarkdownNote(content: string) {
     const contentParser = getContentParser();
     contentParser.parserObject.next();
 
+    const cardsFound: CardResult[] = [];
+
     (visit as any)(mdTree, (node: Node & WithId, index: number | null, parent: (Parent & WithId) | null) => {
         const idGen = contentParser.idGen;
         node._id = [...parent?._id || [], idGen()];
 
         const intent = contentParser.parserObject.next({ node, index, parent });
 
-        if(intent.value?.request === ParserSteps.RelayToVisitor) {
-            return intent.value?.value;
+        switch(intent.value?.request) {
+            case ParserSteps.RelayToVisitor:
+                return intent.value?.value;
+            case ParserSteps.CreatedCard:
+                cardsFound.push(intent.value?.value);
+                break;
         }
     });
 
-    return mdTree;
+    return cardsFound;
 }

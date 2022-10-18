@@ -2,7 +2,8 @@ import * as path from "path";
 import { promises as fs } from "fs";
 import Denque from "denque";
 
-import { processMarkdownNote } from './process_markdown_note.js';
+import { processMarkdownNotes } from './process_markdown_note.js';
+import {breadthFirstSearch} from "./common/bfs.js";
 
 const markdownDirectory = process.env['OBSIDIAN_VAULT_DIR'];
 if(!markdownDirectory) {
@@ -11,14 +12,11 @@ if(!markdownDirectory) {
 
 async function readAndProcessFile(fileFullPath: string) {
     const markdownContent = await fs.readFile(fileFullPath, 'utf-8');
-    await processMarkdownNote(markdownContent);
+    await processMarkdownNotes(markdownContent);
 }
 
 async function traverseDirectoryTree(rootDir: string) {
-    const traversalQueue = new Denque([rootDir]);
-
-    while(!traversalQueue.isEmpty()) {
-        const nextDirectory = traversalQueue.shift() as string; // guaranteed by isEmpty
+    const visitor = async (nextDirectory: string, enqueue: (e: string) => void) => {
         for (const filename of await fs.readdir(nextDirectory)) {
             const contentStats = await fs.lstat(filename);
             if(contentStats.isFile()) {
@@ -29,10 +27,15 @@ async function traverseDirectoryTree(rootDir: string) {
                     // await readAndProcessFile(fileFullPath);
                 }
             } else if(contentStats.isDirectory()) {
-                traversalQueue.push(path.join(nextDirectory, filename))
+                enqueue(path.join(nextDirectory, filename));
             }
         }
     }
+
+    await breadthFirstSearch<string>(
+        rootDir,
+        visitor
+    );
 }
 
 await traverseDirectoryTree(markdownDirectory);
