@@ -19,6 +19,12 @@ Stuff 2
 
 Should keep accumulating until the next heading
 
+## Section B.2
+
+❔ Title C
+Test 123 
+foobar 📓
+
 ## Section C - should not be included in the card
 
 This line shouldn't be included either...

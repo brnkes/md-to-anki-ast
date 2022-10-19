@@ -123,8 +123,8 @@ const markVisitedSubtrees = (
         index: number,
         parent: WithId & Parent
     ) => {
+        // Will be pruned, skip.
         if(elem._id?.length === undefined) {
-            console.warn("Un-ID'd nodes should have been pruned ?");
             return;
         }
 

@@ -8,10 +8,11 @@ describe('Markdown Note Processor', () => {
         expect(result.map(x => x.front)).toEqual([
             'Section A',
             'Section B',
+            'Title C',
             'What is 5+5'
         ]);
 
-        expect(result[2].id).toEqual("foobar");
+        expect(result[3].id).toEqual("foobar");
 
         expect(result.map(x => x.back)).toMatchSnapshot();
     });

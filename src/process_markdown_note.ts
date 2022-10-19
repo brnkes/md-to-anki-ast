@@ -11,7 +11,6 @@ import {assertDefined} from "./shared.js";
 import {toHast} from 'mdast-util-to-hast'
 import {toHtml} from 'hast-util-to-html'
 import {toMarkdown} from "mdast-util-to-markdown";
-import {match} from "assert";
 import {randomUUID} from "crypto";
 
 enum CardHints {
@@ -23,11 +22,12 @@ enum CardHints {
 type FindTitleResults = {
     titleMatch: string;
     contentRemainder: string;
+    lastIndex: number;
 }
 
 function findTitle(content: string): FindTitleResults | undefined {
     const rxPrefix = new RegExp(`^${CardHints.CardFront}\\s+(.+)$`, 'gm');
-    const rxSuffix = new RegExp(`^(.+)\\s+${CardHints.CardFront}\\s?$`, 'gm');
+    const rxSuffix = new RegExp(`^(.+)\\s+${CardHints.CardFront}\\s*$`, 'gm');
 
     for(const rx of [rxPrefix, rxSuffix]) {
         const matches = rx.exec(content);
@@ -36,7 +36,8 @@ function findTitle(content: string): FindTitleResults | undefined {
         if(frontTitle) {
             return {
                 titleMatch: frontTitle,
-                contentRemainder: content.slice(rx.lastIndex)
+                contentRemainder: content.slice(rx.lastIndex),
+                lastIndex: rx.lastIndex
             };
         }
     }
@@ -71,15 +72,10 @@ type ParseGenYield = undefined | {
     value: CardResult
 }
 
-type CardResult = {
-    front: string,
-    back: string,
-    type: string,
-    id: string,
-    _debug?: {
-        backMarkdown?: string
-    }
-}
+type CardIDInjectionCandidate = {
+    line: number,
+    column: number
+};
 
 type ParseContentNextInput = {
     node: Node,
@@ -88,7 +84,23 @@ type ParseContentNextInput = {
 }
 
 type ParseGenStateAfterTitleFound = FindTitleResults & {
-    foundTitleParentIndex: number
+    foundTitleParentIndex: number,
+    placeToInjectIDContainer?: CardIDInjectionCandidate
+}
+
+type CardResult = {
+    front: string,
+    back: string,
+    type: string,
+    placeToInjectIDContainer?: CardIDInjectionCandidate,
+    _debug?: {
+        backMarkdown?: string
+    }
+}
+
+type CardIdProps = {
+    id: string;
+    needsNewCardID: boolean;
 }
 
 const injectIntoArray = <T>(arr: T[], index: number, elementsToInject: T[]) => {
@@ -125,7 +137,17 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
 
                     foundTitle = {
                         ...results,
-                        foundTitleParentIndex: index+1
+                        foundTitleParentIndex: index+1,
+                    }
+
+                    if(node.position) {
+                        foundTitle = {
+                            ...foundTitle,
+                            placeToInjectIDContainer: {
+                                line: node.position?.start.line,
+                                column: node.position?.start.column + results.lastIndex
+                            }
+                        }
                     }
                 }
             }
@@ -133,6 +155,7 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
 
         // Keep accumulating content until card end symbol is found
         let buffer: (Parent & WithId)[] = [];
+
 
         const adjustTraversalRequest: ParseGenYield = {
             request: ParserSteps.RelayToVisitor,
@@ -199,11 +222,13 @@ function* genParseContent(): Generator<ParseGenYield, void, ParseContentNextInpu
         }
         const htmlOutput = toHtml(htmlAST);
 
+        const { placeToInjectIDContainer } = foundTitle;
+
         const card: CardResult = {
             front: foundTitle.titleMatch,
             back: htmlOutput,
             type: 'basic',
-            id: 'todo',
+            placeToInjectIDContainer,
             _debug: {
                 backMarkdown: toMarkdown(subcontentRoot)
             }
@@ -259,7 +284,7 @@ export async function processMarkdownNotes(content: string) {
     const contentParser = getContentParser();
     contentParser.mainContentParser.next();
 
-    const cardsDetected: CardResult[] = [];
+    const cardsDetected: (CardResult & CardIdProps)[] = [];
 
     (visit as any)(mdTree, (node: Node & WithId, index: number | null, parent: (Parent & WithId) | null) => {
         const idGen = contentParser.hierarchicalIdGen;
@@ -273,11 +298,10 @@ export async function processMarkdownNotes(content: string) {
                 return intent.value?.value;
             case ParserSteps.CreatedCard:
                 const cardDetails = intent.value?.value;
-                const idFound = contentParser.cardIdChecker.get() || randomUUID();
+                const idFound = contentParser.cardIdChecker.get();
+                const needsNewCardID = idFound === null;
 
-                cardDetails.id = idFound;
-
-                cardsDetected.push(cardDetails);
+                cardsDetected.push({ ...cardDetails, id: idFound || randomUUID(), needsNewCardID });
                 contentParser.cardIdChecker.reset();
                 break;
         }
