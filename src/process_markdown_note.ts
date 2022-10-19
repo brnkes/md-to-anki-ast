@@ -11,7 +11,6 @@ import {assertDefined} from "./shared.js";
 import {toHast} from 'mdast-util-to-hast'
 import {toHtml} from 'hast-util-to-html'
 import {toMarkdown} from "mdast-util-to-markdown";
-import {randomUUID} from "crypto";
 
 enum CardHints {
     CardFront = "❔",
@@ -88,7 +87,7 @@ type ParseGenStateAfterTitleFound = FindTitleResults & {
     placeToInjectIDContainer?: CardIDInjectionCandidate
 }
 
-type CardResult = {
+export type CardResult = {
     front: string,
     back: string,
     type: string,
@@ -98,9 +97,9 @@ type CardResult = {
     }
 }
 
-type CardIdProps = {
-    id: string;
-    needsNewCardID: boolean;
+export type CardIdProps = {
+    id: string | null;
+    needsNewCardIDInjection: boolean;
 }
 
 const injectIntoArray = <T>(arr: T[], index: number, elementsToInject: T[]) => {
@@ -299,9 +298,9 @@ export async function processMarkdownNotes(content: string) {
             case ParserSteps.CreatedCard:
                 const cardDetails = intent.value?.value;
                 const idFound = contentParser.cardIdChecker.get();
-                const needsNewCardID = idFound === null;
+                const needsNewCardIDInjection = idFound === null;
 
-                cardsDetected.push({ ...cardDetails, id: idFound || randomUUID(), needsNewCardID });
+                cardsDetected.push({ ...cardDetails, id: idFound, needsNewCardIDInjection });
                 contentParser.cardIdChecker.reset();
                 break;
         }
