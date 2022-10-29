@@ -1,0 +1,36 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Markdown Note Processor simple test case 1`] = `
+[
+  "
+<p>Stuff</p>
+<ul>
+<li>A1
+<ul>
+<li>A1.1</li>
+<li>A1.2
+</li>
+</ul>
+</li>
+</ul>",
+  "
+<p>Stuff 2</p>
+<ul>
+<li>B1
+<ul>
+<li>B1.1</li>
+<li>B1.2</li>
+<li>B1.3</li>
+</ul>
+</li>
+<li>B2</li>
+</ul>
+<p>Should keep accumulating until the next heading</p>",
+  "
+Test 123
+foobar ",
+  "
+
+I'll get back to you as soon as I have an answer ",
+]
+`;
